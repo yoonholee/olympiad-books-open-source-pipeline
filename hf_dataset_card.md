@@ -20,6 +20,8 @@ size_categories:
 
 Chunked content from 12 open-source mathematics textbooks, suitable for retrieval (RAG), embedding, and math reasoning research.
 
+Source code: [github.com/yoonholee/olympiad-books-open-source-pipeline](https://github.com/yoonholee/olympiad-books-open-source-pipeline)
+
 ## Books
 
 | Book | Author(s) | License | Source |
