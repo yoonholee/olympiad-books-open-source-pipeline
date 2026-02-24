@@ -1,0 +1,8 @@
+src/
+chapters/
+chunks/
+*.pdf
+__pycache__/
+*.pyc
+agent_notes/
+_tmp_*
