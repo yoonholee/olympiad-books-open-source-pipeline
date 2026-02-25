@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
-"""
-Content-aware chunking for math textbook markdown files.
-
-Chunks by structural boundaries (sections > environments > paragraphs),
-never splitting inside math blocks. Outputs JSONL with metadata.
+"""Content-aware chunking for math textbook markdown files.
 
 Usage:
-    python chunk.py                          # default: 512-1536 tokens
+    python chunk.py
     python chunk.py --min-tokens 256 --max-tokens 1024
-    python chunk.py --book napkin            # single book
+    python chunk.py --book napkin
 """
 
 import argparse
@@ -67,8 +63,6 @@ BOOK_LEVEL = {
     "openlogic": "advanced",
 }
 
-# Part assignments for books beyond Napkin (Napkin parts come from source metadata).
-# Maps book_key -> { chapter_title -> part_name }.
 CHAPTER_PARTS = {
     "aata": {
         "Preliminaries": "Foundations",
@@ -113,6 +107,7 @@ CHAPTER_PARTS = {
         "Probability": "Advanced Topics",
         "Applying Probability to Combinatorics": "Advanced Topics",
         "P\u00f3lya's Enumeration Theorem": "Advanced Topics",
+        "P&#243;lya\u2019s Enumeration Theorem": "Advanced Topics",
         "P&#243;lya's Enumeration Theorem": "Advanced Topics",
     },
     "fcla": {
@@ -218,11 +213,8 @@ def estimate_tokens(text: str) -> int:
     return int(len(text) / CHARS_PER_TOKEN)
 
 
-# ---------------------------------------------------------------------------
-# Metadata: build proper chapter/part titles from source files
-# ---------------------------------------------------------------------------
 def build_napkin_metadata() -> dict:
-    """Map filename stem -> (part, chapter_title) from Napkin.tex + chapter headers."""
+    """Map filename stem -> (part, chapter_title) from Napkin.tex."""
     src = BASE / "src" / "napkin"
     main_path = src / "Napkin.tex"
     if not main_path.exists():
@@ -294,60 +286,9 @@ def get_napkin_meta():
 
 def get_pretext_meta(book_key):
     if book_key not in PRETEXT_META:
-        configs = {
-            "mathematical-reasoning": (
-                BASE / "src" / "sundstrom-textbook" / "source",
-                ["C_1intro.ptx", "C_2logic.ptx", "C_3proofs.ptx",
-                 "C_4induction.ptx", "C_5settheory.ptx", "C_6functions.ptx",
-                 "C_7equivrelations.ptx", "C_8numbertheory.ptx", "C_9topicsinsets.ptx"],
-            ),
-            "exploring-combinatorial-math": (
-                BASE / "src" / "ecm" / "source",
-                ["ch_intro.ptx", "ch_basic-combinatorics.ptx",
-                 "ch_advanced-combinatorics.ptx", "ch_graphtheory.ptx",
-                 "ch_logic.ptx"],
-            ),
-            "discrete-mathematics": (
-                BASE / "src" / "discrete-book" / "source",
-                ["ch_intro.ptx", "ch_logic.ptx", "ch_graphtheory.ptx",
-                 "ch_counting.ptx", "ch_sequences.ptx", "ch_structures.ptx",
-                 "ch_additionalTopics.ptx"],
-            ),
-            "aata": (
-                BASE / "src" / "aata" / "src",
-                ["sets.xml", "integers.xml", "groups.xml", "cyclic.xml",
-                 "permute.xml", "cosets.xml", "crypt.xml", "algcodes.xml",
-                 "isomorph.xml", "normal.xml", "homomorph.xml", "matrix.xml",
-                 "struct.xml", "actions.xml", "sylow.xml", "rings.xml",
-                 "poly.xml", "domains.xml", "boolean.xml", "vect.xml",
-                 "fields.xml", "finite.xml", "galois.xml"],
-            ),
-            "applied-combinatorics": (
-                BASE / "src" / "applied-combinatorics" / "source",
-                ["ch_prologue.ptx", "ch_intro.ptx", "ch_strings.ptx",
-                 "ch_induction.ptx", "ch_basics.ptx", "ch_graphs.ptx",
-                 "ch_posets.ptx", "ch_inclusion-exclusion.ptx",
-                 "ch_genfunction.ptx", "ch_recurrence.ptx",
-                 "ch_probability.ptx", "ch_probmeth.ptx",
-                 "ch_graphalgorithms.ptx", "ch_networkflow.ptx",
-                 "ch_flowapplications.ptx", "ch_polya.ptx",
-                 "ch_kitchensink.ptx"],
-            ),
-            "bogart": (
-                BASE / "src" / "bogart" / "mbx",
-                ["ch1-whatis.mbx", "ch2-induction.mbx", "ch3-distribution.mbx",
-                 "ch4-genfns.mbx", "ch5-inclexcl.mbx", "ch6-groupsonsets.mbx",
-                 "app1-relations.mbx", "app2-induction.mbx", "app3-expogenfns.mbx"],
-            ),
-            "fcla": (
-                BASE / "src" / "fcla" / "src",
-                ["chapter-SLE.xml", "chapter-V.xml", "chapter-M.xml",
-                 "chapter-VS.xml", "chapter-D.xml", "chapter-E.xml",
-                 "chapter-LT.xml", "chapter-R.xml"],
-            ),
-        }
-        if book_key in configs:
-            src_dir, files = configs[book_key]
+        from extract import PRETEXT_BOOKS
+        if book_key in PRETEXT_BOOKS:
+            src_dir, files = PRETEXT_BOOKS[book_key]
             PRETEXT_META[book_key] = build_pretext_metadata(src_dir, files)
         else:
             PRETEXT_META[book_key] = {}
@@ -388,40 +329,21 @@ def resolve_chapter_meta(book_key: str, filename: str, md_path=None) -> dict:
     return {"part": "", "chapter": stem.replace("-", " ").title()}
 
 
-# ---------------------------------------------------------------------------
-# Pre-cleaning
-# ---------------------------------------------------------------------------
 def preclean(text: str) -> str:
-    # Pandoc cross-ref: [\[label\]](#label){reference-type=...} -> remove
+    """Remove pandoc cross-ref artifacts and other noise before chunking."""
+    text = re.sub(r'\[\\?\[.+?\\?\]\]\(#[^)]*\)(?:\{[^}]*\})?', '', text)
     text = re.sub(
-        r'\[\\?\[.+?\\?\]\]\(#[^)]*\)(?:\{[^}]*\})?',
-        '',
-        text
-    )
-    # Pandoc cross-ref without inner escapes: [label](#label){reference-type=...}
-    text = re.sub(
-        r'\[[^\]]*?\]\(#[^)]*\)\{reference-type="[^"]*"\s+reference="[^"]*"\}',
-        '',
-        text
-    )
-    # Remaining {reference-type=...} attributes
+        r'\[[^\]]*?\]\(#[^)]*\)\{reference-type="[^"]*"\s+reference="[^"]*"\}', '', text)
     text = re.sub(r'\{reference-type="[^"]*"\s+reference="[^"]*"\}', '', text)
-    # Bare LaTeX labels: [ch:label], [thm:label], [prob:label], etc.
     text = re.sub(r'\[(?:ch|thm|prob|exer|def|sec|ex|lem|cor|rem|prop|fig|tab|eq):[\w_-]+\\?\]', '', text)
-    # Bibliography references: [@ref:label] or [@ref:label §4.1]
     text = re.sub(r'\[@ref:[^\]]+\]', '', text)
-    # Strip bare ## headers (pandoc artifact from exercise sections)
     text = re.sub(r'^#{2,4}\s*$', '', text, flags=re.MULTILINE)
-    # Clean up double+ spaces
     text = re.sub(r'  +', ' ', text)
-    # Duplicate h1
     text = re.sub(r'^(# .+)\n\n# .+$', r'\1', text, count=1, flags=re.MULTILINE)
     return text
 
 
-# ---------------------------------------------------------------------------
-# Structural parsing
-# ---------------------------------------------------------------------------
+
 ENV_PATTERN = re.compile(
     r'^\*\*('
     r'Theorem|Lemma|Proposition|Corollary|Definition|Example|Remark|'
@@ -522,9 +444,7 @@ def split_at_paragraphs(text: str, max_tokens: int) -> list[str]:
     return pieces
 
 
-# ---------------------------------------------------------------------------
-# Chunking
-# ---------------------------------------------------------------------------
+
 def chunk_chapter(text: str, chapter_meta: dict,
                   min_tokens: int, max_tokens: int) -> list[dict]:
     text = preclean(text)
@@ -609,9 +529,7 @@ def merge_small_chunks(chunks, min_tokens, max_tokens):
     return merged
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
+
 def process_book(book_key: str, min_tokens: int, max_tokens: int) -> list[dict]:
     book_dir = CHAPTERS_DIR / book_key
     if not book_dir.exists():

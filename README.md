@@ -7,31 +7,13 @@ The published dataset is at [huggingface.co/datasets/yoonholee/olympiad-books-op
 ## Quick start
 
 ```bash
-# 1. Clone source textbooks
-./clone_sources.sh
-
-# 2. Extract chapters to markdown
-python extract_all.py          # 4 original books (Napkin + 3 PreTeXt)
-python extract_new_books.py    # 8 additional books
-
-# 3. Chunk and produce JSONL
-python chunk.py
-
-# 4. Push to HuggingFace
-python push_to_hf.py
+./clone_sources.sh          # clone all 12 source repos
+python extract.py           # extract chapters to markdown
+python chunk.py             # content-aware chunking -> JSONL
+python push_to_hf.py        # push to HuggingFace
 ```
 
 Requires: Python 3.10+, `pandoc`, `datasets` (pip).
-
-## Scripts
-
-| File | Purpose |
-|------|---------|
-| `clone_sources.sh` | Clone all 12 source repos into `src/` |
-| `extract_all.py` | Extract Napkin (LaTeX) and 3 PreTeXt books to markdown |
-| `extract_new_books.py` | Extract 8 additional books (4 PreTeXt, 4 LaTeX) to markdown |
-| `chunk.py` | Content-aware chunking with metadata (subject, level, part, chapter, section) |
-| `push_to_hf.py` | Package JSONL into a HuggingFace dataset and push |
 
 ## Books
 
